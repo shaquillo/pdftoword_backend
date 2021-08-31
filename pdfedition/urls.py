@@ -7,5 +7,7 @@ urlpatterns = [
     path('saveandocr/', views.uploadAndOCRFile),
     path('pdf2html/', views.pdf2html),
     path('pdf2htmlEX/', views.pdf2htmlEX),
-    path('saveEditedPdf/', views.saveEditedFile)
+    path('saveEditedHtml/', views.saveEditedFile),
+    path('saveEditedPdf/', views.saveEditedPdf),
+    path('getpdf/', views.getpdf)
 ]

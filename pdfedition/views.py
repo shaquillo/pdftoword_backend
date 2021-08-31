@@ -1,3 +1,4 @@
+from os import name
 from django.http.response import HttpResponse
 from django.shortcuts import render
 from django.conf import settings
@@ -16,6 +17,8 @@ from ocrmypdf import ocr
 import pdftotree
 from bs4 import BeautifulSoup as bs
 from pdfkit import from_file
+from django_selenium_pdfmaker.modules import PDFMaker
+
 
 # Create your views here.
 
@@ -46,6 +49,30 @@ def pdftoword(request):
             return Response({'message': 'Could not open or find doc file'})
                 
     return Response({'message': 'Need to pass filename'})
+
+
+@api_view(['GET'])
+def getpdf(request):
+    logger.info('call to getpdf')
+
+    if request.query_params['filename']:
+        filename = request.query_params['filename']
+        pdf_file_path = settings.MEDIA_ROOT + '/' + filename
+        logger.info('pdf_file_path: ' + pdf_file_path)
+
+        
+        try :
+            with open(pdf_file_path, 'rb') as f:
+                response = HttpResponse(f.read(), content_type='application/pdf')
+                response['Content-Disposition'] = 'attachment; filename="' + filename + '"'
+
+                return response
+        except Exception as e:
+            logger.info('Error when opening file')
+            print(e)
+            return Response({'message': 'Could not open or find doc file'})
+        
+    return Response({'message': 'No pdf file passed in form data'})
 
 
 @api_view(['POST'])
@@ -127,11 +154,21 @@ def saveEditedFile(request):
     logger.info('call to saveEditedFile')
     if request.FILES['html']:
         html_file = request.FILES['html']
+        print(html_file.name)
         filename = html_file.name[:-5] + '.pdf'
         pdf_file_path = settings.MEDIA_ROOT + '/' + filename
 
+        if(fs.exists(html_file.name)):
+            fs.delete(html_file.name)
         fs.save(content=html_file, name=html_file.name)
+
         from_file(settings.MEDIA_ROOT + '/' + html_file.name, pdf_file_path)
+        subprocess.call("ocrmypdf " + pdf_file_path + " " + pdf_file_path + " --force-ocr", shell=True)
+
+        # pdfmaker = PDFMaker()
+        # res = pdfmaker.get_pdf_from_html(path=settings.MEDIA_ROOT + '/' + html_file.name, filename=pdf_file_path, write=True)
+
+        # return 'done'
 
         try :
             with open(pdf_file_path, 'rb') as f:
@@ -144,4 +181,30 @@ def saveEditedFile(request):
             print(e)
             return Response({'message': 'Could not open or find doc file'})
         
+    return Response({'message': 'No pdf file passed in form data'})
+
+
+@api_view(['POST'])
+def saveEditedPdf(request):
+    logger.info('Call to save edited pdf')
+    if request.FILES['pdf']:
+        pdf_file = request.FILES['pdf']
+        filename = pdf_file.name
+        pdf_file_path = settings.MEDIA_ROOT + '/' +  filename
+
+        if fs.exists(filename):
+            fs.delete(filename)
+        fs.save(content=pdf_file, name=filename)
+
+        try :
+            with open(pdf_file_path, 'rb') as f:
+                response = HttpResponse(f.read(), content_type='application/pdf')
+                response['Content-Disposition'] = 'attachment; filename="' + filename + '"'
+
+                return response
+        except Exception as e:
+            logger.info('Error when opening file')
+            print(e)
+            return Response({'message': 'Could not open or find doc file'})
+
     return Response({'message': 'No pdf file passed in form data'})
