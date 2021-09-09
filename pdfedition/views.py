@@ -8,6 +8,7 @@ import logging
 import re
 from datetime import datetime
 import subprocess
+from django.utils.functional import empty
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -18,6 +19,9 @@ import pdftotree
 from bs4 import BeautifulSoup as bs
 from pdfkit import from_file
 from django_selenium_pdfmaker.modules import PDFMaker
+import pypandoc
+from htmldocx import HtmlToDocx
+from cssutils import parseStyle
 
 
 # Create your views here.
@@ -25,6 +29,10 @@ from django_selenium_pdfmaker.modules import PDFMaker
 logger = logging.getLogger(__name__)
 
 fs = FileSystemStorage(location = settings.MEDIA_ROOT)
+
+html_to_doc_parser = HtmlToDocx()
+
+px2pt_factor = 1.333333
 
 @api_view(['POST'])
 def pdftoword(request):
@@ -129,8 +137,26 @@ def pdf2htmlEX(request):
 
         html = open(html_file_name)
         soup = bs(html, 'html.parser')
+
+        script = "window.onload = function(){var inputs = []; var i = 0; "
+        pages = soup.select("div[class^=pf]")
+
+        for i in range(1, len(pages) + 1):
+            script += "document.getElementById('pf"+ str(i) +"').onclick = function clickEvent(e) { if(!inputs.includes(e.target.id) && !e.target.classList.contains('t')){ var rect = document.getElementById('pf"+ str(i) +"').getBoundingClientRect();let x = e.clientX - rect.left;let y = e.clientY - rect.top;console.log('Left? : ' + x + ' ; Top? : ' + y + '.');const errorElem = document.createElement('input');errorElem.style.top = y.toString()+'px';errorElem.style.left =x.toString()+'px';errorElem.style.position = 'absolute';errorElem.placeholder = 'enter text';errorElem.id = 'input' + i;errorElem.value = '';errorElem.style.minWidth = '60px';i+=1;const divElem = document.createElement('div');function createDiv(){if(document.getElementById(errorElem.id).value !== ''){divElem.style.top = errorElem.style.top;divElem.style.left = errorElem.style.left;divElem.style.position = 'absolute';divElem.style.fontSize = '15px';divElem.id = errorElem.id;divElem.innerHTML = errorElem.value;divElem.onclick = function(e){divElem.draggable = 'false';divElem.contentEditable = 'true';};divElem.onmousemove = function(e){if(document.activeElement !== divElem){divElem.draggable = 'true';divElem.contentEditable = 'false';}};document.getElementById('pf" + str(i) + "').appendChild(divElem);function drag_start(event) {var style = window.getComputedStyle(event.target, null);event.dataTransfer.setData('text/plain',(parseInt(style.getPropertyValue('left'),10) - event.clientX) + ',' + (parseInt(style.getPropertyValue('top'),10) - event.clientY) +  ',' + divElem.id);} function drag_over(event) { event.preventDefault(); return false; } function drop(event) { var offset = event.dataTransfer.getData('text/plain').split(',');var elem = document.getElementById(offset[2]);elem.style.left = (event.clientX + parseInt(offset[0],10)) + 'px';elem.style.top = (event.clientY + parseInt(offset[1],10)) + 'px';event.preventDefault();return false;} divElem.addEventListener('dragstart',drag_start,false); document.body.addEventListener('dragover',drag_over,false); document.body.addEventListener('drop',drop,false); }errorElem.remove();} errorElem.onblur = (e) => {createDiv();};errorElem.addEventListener('keydown', (e) =>{if(e.key === 'Enter'){createDiv();}}); errorElem.addEventListener('input', resizeInput);resizeInput.call(errorElem);function resizeInput() {this.style.width = this.value.length + 'ch';}document.getElementById('pf"+ str(i) +"').appendChild(errorElem);inputs.push(errorElem.id);}};"
+
+        script += "}"
+
         for div in soup.select('div[class*="t "]'):
             div['contentEditable'] = 'true'
+
+        
+        for div in pages:
+            div['style'] = "margin: 0px;"
+        
+        script_tag = soup.new_tag('script')
+        script_tag.string = script
+
+        soup.html.body.append(script_tag)
 
         with open(html_file_name, 'w') as f:
             f.write(str(soup))
@@ -157,16 +183,38 @@ def saveEditedFile(request):
         print(html_file.name)
         filename = html_file.name[:-5] + '.pdf'
         pdf_file_path = settings.MEDIA_ROOT + '/' + filename
+        html_file_path = settings.MEDIA_ROOT + '/' + html_file.name
 
         if(fs.exists(html_file.name)):
             fs.delete(html_file.name)
         fs.save(content=html_file, name=html_file.name)
 
-        from_file(settings.MEDIA_ROOT + '/' + html_file.name, pdf_file_path)
-        subprocess.call("ocrmypdf " + pdf_file_path + " " + pdf_file_path + " --force-ocr", shell=True)
 
-        # pdfmaker = PDFMaker()
-        # res = pdfmaker.get_pdf_from_html(path=settings.MEDIA_ROOT + '/' + html_file.name, filename=pdf_file_path, write=True)
+        ## changing position values and font-size values before converting to pdf
+        html = open(html_file_path)
+        soup = bs(html, 'html.parser')
+
+        for empty_input in soup.select('input[id^="input"]'):
+            empty_input.clear()
+
+        for new_text_div in soup.select('div[id^="input"]'):
+            style = parseStyle(new_text_div['style'])
+            style['left'] = "{:.6f}pt".format(float(style['left'][:-2])*px2pt_factor)
+            style['top'] = "{:.6f}pt".format(float(style['top'][:-2])*px2pt_factor)
+            style['font-size'] = "{:.6f}pt".format(float(style['font-size'][:-2])*px2pt_factor)
+            new_text_div['style'] = style.cssText
+
+        with open(html_file_path, 'w') as f:
+            f.write(str(soup))
+
+        from_file(settings.MEDIA_ROOT + '/' + html_file.name, pdf_file_path)    # add
+        # subprocess.call("ocrmypdf " + pdf_file_path + " " + pdf_file_path + " --force-ocr", shell=True)
+
+        # subprocess.call("pandoc " + settings.MEDIA_ROOT + '/' + html_file.name + " -o " + pdf_file_path, shell=True)
+
+        # html_to_doc_parser.parse_html_file(settings.MEDIA_ROOT + '/' + html_file.name, docx_file_path)
+        # subprocess.call("pandoc " + settings.MEDIA_ROOT + '/' + html_file.name + " -o " + docx_file_path, shell=True)
+        # subprocess.call("pandoc " + docx_file_path + " -o " + pdf_file_path, shell=True)
 
         # return 'done'
 
