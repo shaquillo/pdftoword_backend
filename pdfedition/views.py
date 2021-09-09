@@ -148,10 +148,6 @@ def pdf2htmlEX(request):
 
         for div in soup.select('div[class*="t "]'):
             div['contentEditable'] = 'true'
-
-        
-        for div in pages:
-            div['style'] = "margin: 0px;"
         
         script_tag = soup.new_tag('script')
         script_tag.string = script
