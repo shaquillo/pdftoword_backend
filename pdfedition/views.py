@@ -191,7 +191,7 @@ def saveEditedFile(request):
         soup = bs(html, 'html.parser')
 
         for empty_input in soup.select('input[id^="input"]'):
-            empty_input.clear()
+            empty_input.decompose()
 
         for new_text_div in soup.select('div[id^="input"]'):
             style = parseStyle(new_text_div['style'])
@@ -203,7 +203,12 @@ def saveEditedFile(request):
         with open(html_file_path, 'w') as f:
             f.write(str(soup))
 
-        from_file(settings.MEDIA_ROOT + '/' + html_file.name, pdf_file_path)    # add
+        options = {
+            'encoding': "UTF-8",
+            # 'print-media-type': None
+        }
+
+        from_file(settings.MEDIA_ROOT + '/' + html_file.name, pdf_file_path, options=options)    # add
         # subprocess.call("ocrmypdf " + pdf_file_path + " " + pdf_file_path + " --force-ocr", shell=True)
 
         # subprocess.call("pandoc " + settings.MEDIA_ROOT + '/' + html_file.name + " -o " + pdf_file_path, shell=True)
